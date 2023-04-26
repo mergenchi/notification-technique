@@ -9,7 +9,7 @@ const pool = new Pool({
 });
 
 interface Apparats {
-  apparat_id: number;
+  apparat_id: string;
   apparat_name?: string;
   id_technika?: string;
   last_trans_date: string;

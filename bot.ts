@@ -4,6 +4,7 @@ import { queryDatabase } from './getApparatsFromPg';
 import { GoogleSheets } from './googleSpreadSheets';
 import { CallbackQuery, Update } from 'telegraf/typings/core/types/typegram';
 import { apparatInfoKB } from './keyboards';
+import { v4 as uuidv4 } from 'uuid';
 
 const bot = new Telegraf('6043603974:AAFTsNX3jFYVSPa0RC05MCUOBsYRO2C00C4');
 bot.use(session());
@@ -20,12 +21,20 @@ cron.schedule('* * * * *', async () => {
   const technic = await googleSheet.read();
 
   apparats.forEach(async (apparat) => {
+    const id = uuidv4();
+    const date_send_message = new Date();
+    await googleSheet.write({
+      id: id,
+      id_apparat: apparat.apparat_id,
+      name_apparat: apparat.apparat_name || 'пусто',
+      last_transaction_date: new Date(apparat.last_trans_date).toLocaleString('ru-RU'),
+      date_send_message: date_send_message.toLocaleString('ru-RU'),
+      timedelta: (date_send_message.valueOf() - new Date(apparat.last_trans_date).valueOf()) / 3600000,
+    });
     if (apparat.id_technika && technic.hasOwnProperty(apparat.id_technika)) {
       await bot.telegram.sendMessage(
         technic[apparat.id_technika],
-        `Номер терминала: ${apparat.apparat_id}\nНазвание точки: ${apparat.apparat_name}\nДата последнего платежа: ${
-          apparat.last_trans_date
-        }\nДата отправки уведомления: ${new Date().toLocaleString('ru-RU')}`,
+        `Идентификатор: ${id}\nНомер терминала: ${apparat.apparat_id}\nНазвание точки: ${apparat.apparat_name}\nДата последнего платежа: ${apparat.last_trans_date}\nДата отправки уведомления: ${date_send_message}`,
         {
           reply_markup: apparatInfoKB,
         },
@@ -33,9 +42,7 @@ cron.schedule('* * * * *', async () => {
     } else {
       await bot.telegram.sendMessage(
         561418543,
-        `Номер терминала: ${apparat.apparat_id}\nНазвание точки: ${apparat.apparat_name}\nДата последнего платежа: ${
-          apparat.last_trans_date
-        }\nДата отправки уведомления: ${new Date().toLocaleString('ru-RU')}`,
+        `Идентификатор: ${id}\nНомер терминала: ${apparat.apparat_id}\nНазвание точки: ${apparat.apparat_name}\nДата последнего платежа: ${apparat.last_trans_date}\nДата отправки уведомления: ${date_send_message}`,
         {
           reply_markup: apparatInfoKB,
         },
@@ -45,21 +52,14 @@ cron.schedule('* * * * *', async () => {
 });
 
 function getApparatInfoFromMessage(message: CallbackQuery.AbstractQuery['message']): {
-  apparatId?: string;
-  apparatName?: string;
-  lastTransDate?: string;
-  sendMessageDate?: string;
+  id?: string;
 } {
-  // Extract the apparat ID and name from the message text
-  const regex =
-    /Номер терминала: (\d+)\nНазвание точки: (.+)\nДата последнего платежа: (.+)\nДата отправки уведомления: (.+)/;
-  const match = message.text && message.text.match(regex);
+  const regex = /Идентификатор:\s*([a-f\d-]+)/;
+  const match = message.text.match(regex);
+
   if (match) {
     return {
-      apparatId: match[1],
-      apparatName: match[2],
-      lastTransDate: match[3],
-      sendMessageDate: match[4],
+      id: match[1],
     };
   } else {
     return {};
@@ -80,17 +80,14 @@ async function handleApparatAction(
     const apparatInfo = getApparatInfoFromMessage(message);
 
     if (apparatInfo) {
-      const { apparatId, apparatName, lastTransDate, sendMessageDate } = apparatInfo;
+      const { id } = apparatInfo;
 
-      await googleSheet.write({
-        id_apparat: apparatId!,
-        name_apparat: apparatName,
-        id_technicians: ctx.chat?.id!,
-        name_technicians: ctx.from?.first_name!,
-        date_send_message: sendMessageDate!,
-        last_transaction_date: new Date(lastTransDate!).toLocaleString('ru-RU'),
+      await googleSheet.update({
         date_technicians_response: new Date().toLocaleString('ru-RU'),
         error_type: callbackData,
+        id: id!,
+        id_technicians: ctx.from?.id!,
+        name_technicians: ctx.from?.first_name!,
       });
       const res = await ctx.deleteMessage();
       return res;
