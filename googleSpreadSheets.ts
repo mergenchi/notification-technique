@@ -3,14 +3,20 @@ import { ErrorMessages, errorMessages } from './translator';
 import dotenv from 'dotenv';
 dotenv.config();
 
-export interface Message {
+export interface NewMessage {
+  id: string;
   id_apparat: string;
-  name_apparat?: string;
-  id_technicians: number;
-  name_technicians: string;
+  name_apparat: string;
   last_transaction_date: string;
   date_send_message: string;
   timedelta?: string | number | boolean;
+  comment?: string;
+}
+
+export interface UpdateMessage {
+  name_technicians: string;
+  id_technicians: number;
+  id: string;
   date_technicians_response: string;
   error_type: string;
   comment?: string;
@@ -80,7 +86,7 @@ export class GoogleSheets {
   //   return doc.sheetsByIndex[0];
   // }
 
-  public async write(message: Message) {
+  public async write(message: NewMessage) {
     const doc = new GoogleSpreadsheet(this._documentIdToWrite);
     await doc.useServiceAccountAuth({
       client_email: this._client_email,
@@ -88,17 +94,33 @@ export class GoogleSheets {
     });
     await doc.loadInfo();
     const sheet = doc.sheetsByIndex[0];
+    console.log(message);
+
     const row = await sheet.addRow({
+      id: message.id,
       id_apparat: message.id_apparat,
       name_apparat: message.name_apparat ? message.name_apparat : '',
-      id_technicians: message.id_technicians,
       last_transaction_date: message.last_transaction_date,
-      name_technicians: message.name_technicians,
       date_send_message: message.date_send_message,
-      date_technicians_response: message.date_technicians_response,
-      timedelta: `=F${sheet.rowCount + 1}-E${sheet.rowCount + 1}`,
-      error_type: errorMessages[message.error_type as keyof ErrorMessages],
+      timedelta: message.timedelta!,
     });
+  }
+
+  public async update(message: UpdateMessage) {
+    const doc = new GoogleSpreadsheet(this._documentIdToWrite);
+    await doc.useServiceAccountAuth({
+      client_email: this._client_email,
+      private_key: this._private_key,
+    });
+    await doc.loadInfo();
+    const sheet = doc.sheetsByIndex[0];
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find((row) => row.id === message.id)!;
+    rowToUpdate.id_technicians = message.id_technicians;
+    rowToUpdate.name_technicians = message.name_technicians;
+    rowToUpdate.error_type = errorMessages[message.error_type as keyof ErrorMessages];
+    rowToUpdate.date_technicians_response = new Date();
+    await rowToUpdate.save();
   }
 
   public async read(): Promise<TechnicsList> {
