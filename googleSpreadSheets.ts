@@ -35,8 +35,14 @@ export class GoogleSheets {
   constructor(client_email: string, private_key: string, documentIdToWrite: string, documentIdToRead: string) {
     this._client_email = client_email;
     this._private_key = private_key;
-    this._documentIdToWrite = documentIdToWrite;
     this._documentIdToRead = documentIdToRead;
+    this._documentIdToWrite = documentIdToWrite;
+    (async () => {
+      const result = await this.setNewDocumentIdToWrite(documentIdToWrite);
+      if (!result) {
+        throw new Error('Invalid sheet format');
+      }
+    })();
   }
 
   get client_email(): string {
@@ -69,7 +75,6 @@ export class GoogleSheets {
     const sheet = doc.sheetsByIndex[0];
     const rows = await sheet.getRows();
     if (rows[0]._rawData.toString() === required_fields.toString()) {
-      this._documentIdToWrite = documentIdToWrite;
       return true;
     } else {
       return false;
@@ -138,3 +143,20 @@ export class GoogleSheets {
     }, {});
   }
 }
+
+const googleSheet = new GoogleSheets(
+  process.env.CLIENT_EMAIL!,
+  process.env.PRIVATE_KEY!,
+  process.env.DOCUMENTIDTOWRITE!,
+  process.env.DOCUMENTIDTOREAD!,
+);
+
+(async () => {
+  await googleSheet.write({
+    id: '123',
+    apparat_id: '123',
+    last_trans_date: '123',
+    date_send_message: '123',
+    timedelta: '123',
+  });
+})();
