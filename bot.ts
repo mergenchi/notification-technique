@@ -1,7 +1,7 @@
 import { Context, NarrowedContext, Telegraf, session } from 'telegraf';
 import cron from 'node-cron';
-import { queryDatabase } from './getApparatsFromPg';
-import { GoogleSheets } from './googleSpreadSheets';
+import { Apparats, queryDatabase } from './getApparatsFromPg';
+import { GoogleSheets, TechnicsList } from './googleSpreadSheets';
 import { CallbackQuery, Update } from 'telegraf/typings/core/types/typegram';
 import { apparatInfoKB } from './keyboards';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,58 +12,70 @@ bot.use(session());
 const googleSheet = new GoogleSheets(
   process.env.CLIENT_EMAIL!,
   process.env.PRIVATE_KEY!,
-  '18cGUuBGlMu6zaJIXj6lypOc28ufkTVSt1R_SMlB6V0o',
-  '1D0Z7UOyHuZZA-nl_PA1lDEVZF-N-KenCGFmjHd1DQp0',
+  process.env.DOCUMENTIDTOWRITE!,
+  process.env.DOCUMENTIDTOREAD!,
 );
 
-cron.schedule('* * * * *', async () => {
-  const apparats = await queryDatabase();
-  const technic = await googleSheet.read();
+async function sendNotification(apparat: Apparats, technic: TechnicsList) {
+  const id = uuidv4();
+  const date_send_message = new Date();
+  const { apparat_id, apparat_name, last_trans_date, id_technika } = apparat;
+  const technikId = id_technika && technic.hasOwnProperty(id_technika) ? technic[id_technika] : 561418543;
+  const timedelta = (date_send_message.valueOf() - new Date(last_trans_date).valueOf()) / 3600000;
 
-  apparats.forEach(async (apparat) => {
-    const id = uuidv4();
-    const date_send_message = new Date();
-    await googleSheet.write({
-      id: id,
-      id_apparat: apparat.apparat_id,
-      name_apparat: apparat.apparat_name || 'пусто',
-      last_transaction_date: new Date(apparat.last_trans_date).toLocaleString('ru-RU'),
+  await Promise.all([
+    googleSheet.write({
+      id,
+      apparat_id,
+      apparat_name,
+      last_trans_date: new Date(last_trans_date).toLocaleString('ru-RU'),
       date_send_message: date_send_message.toLocaleString('ru-RU'),
-      timedelta: (date_send_message.valueOf() - new Date(apparat.last_trans_date).valueOf()) / 3600000,
-    });
-    if (apparat.id_technika && technic.hasOwnProperty(apparat.id_technika)) {
-      await bot.telegram.sendMessage(
-        technic[apparat.id_technika],
-        `Идентификатор: ${id}\nНомер терминала: ${apparat.apparat_id}\nНазвание точки: ${apparat.apparat_name}\nДата последнего платежа: ${apparat.last_trans_date}\nДата отправки уведомления: ${date_send_message}`,
-        {
-          reply_markup: apparatInfoKB,
-        },
-      );
-    } else {
-      await bot.telegram.sendMessage(
-        561418543,
-        `Идентификатор: ${id}\nНомер терминала: ${apparat.apparat_id}\nНазвание точки: ${apparat.apparat_name}\nДата последнего платежа: ${apparat.last_trans_date}\nДата отправки уведомления: ${date_send_message}`,
-        {
-          reply_markup: apparatInfoKB,
-        },
-      );
+      timedelta,
+    }),
+    bot.telegram.sendMessage(
+      technikId,
+      `Идентификатор: ${id}\nНомер терминала: ${apparat_id}\nНазвание точки: ${apparat_name}\nДата последнего платежа: ${new Date(
+        last_trans_date,
+      ).toLocaleString('ru-RU')}\nДата отправки уведомления: ${date_send_message.toLocaleString('ru-RU')}`,
+      {
+        reply_markup: apparatInfoKB,
+      },
+    ),
+  ]);
+}
+
+async function getData() {
+  try {
+    const [apparats, technic] = await Promise.all([queryDatabase(), googleSheet.read()]);
+
+    for await (const apparat of apparats) {
+      await sendNotification(apparat, technic);
     }
-  });
-});
+  } catch (error) {
+    console.error(error);
+  }
+}
 
-function getApparatInfoFromMessage(message: CallbackQuery.AbstractQuery['message']): {
-  id?: string;
-} {
-  const regex = /Идентификатор:\s*([a-f\d-]+)/;
-  const match = message.text.match(regex);
+cron.schedule('* * * * *', getData);
 
-  if (match) {
-    return {
-      id: match[1],
-    };
-  } else {
+function getApparatInfoFromMessage(message: CallbackQuery.AbstractQuery['message']) {
+  const matches = message.text.match(
+    /Идентификатор: (.+)\nНомер терминала: (.+)\nНазвание точки: (.+)\nДата последнего платежа: (.+)\nДата отправки уведомления: (.+)/,
+  );
+
+  if (!matches) {
     return {};
   }
+
+  const [_, id, apparat_id, apparat_name, last_trans_date, date_send_message] = matches;
+
+  return {
+    id,
+    apparat_id,
+    apparat_name,
+    last_trans_date: new Date(last_trans_date),
+    date_send_message: new Date(date_send_message),
+  };
 }
 
 async function handleApparatAction(
@@ -107,8 +119,9 @@ async function handleApparatActionWithLoading(
   try {
     await ctx.editMessageText('Loading...');
     await handleApparatAction(ctx, actionType);
+    await ctx.deleteMessage();
   } catch {
-    await ctx.editMessageText(ctx.update.callback_query.message?.text! + '\n\nНе получилось отправить', {
+    await ctx.editMessageText(ctx.update.callback_query.message.text! + '\n\nНе получилось отправить', {
       reply_markup: apparatInfoKB,
     });
   }
