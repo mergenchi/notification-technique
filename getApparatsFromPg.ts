@@ -1,14 +1,17 @@
 import { Pool } from 'pg';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const pool = new Pool({
-  host: '10.118.5.5',
-  database: 'qp_kg',
-  password: '4gioujhn2tg8o7yh',
-  user: 'qp_kg_user',
-  port: 5432,
+  host: process.env.DB_HOST,
+  database: process.env.DB_DATABASE,
+  password: process.env.DB_PASSWORD,
+  user: process.env.DB_USER,
+  port: +process.env.DB_PORT! || 5432,
 });
 
-interface Apparats {
+export interface Apparats {
   apparat_id: string;
   apparat_name?: string;
   id_technika?: string;

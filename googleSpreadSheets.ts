@@ -5,11 +5,11 @@ dotenv.config();
 
 export interface NewMessage {
   id: string;
-  id_apparat: string;
-  name_apparat: string;
-  last_transaction_date: string;
+  apparat_id: string;
+  apparat_name?: string;
+  last_trans_date: string;
   date_send_message: string;
-  timedelta?: string | number | boolean;
+  timedelta: string | number | boolean;
   comment?: string;
 }
 
@@ -94,13 +94,12 @@ export class GoogleSheets {
     });
     await doc.loadInfo();
     const sheet = doc.sheetsByIndex[0];
-    console.log(message);
 
     const row = await sheet.addRow({
       id: message.id,
-      id_apparat: message.id_apparat,
-      name_apparat: message.name_apparat ? message.name_apparat : '',
-      last_transaction_date: message.last_transaction_date,
+      apparat_id: message.apparat_id,
+      apparat_name: message.apparat_name || 'Пусто',
+      last_trans_date: message.last_trans_date,
       date_send_message: message.date_send_message,
       timedelta: message.timedelta!,
     });
@@ -119,7 +118,7 @@ export class GoogleSheets {
     rowToUpdate.id_technicians = message.id_technicians;
     rowToUpdate.name_technicians = message.name_technicians;
     rowToUpdate.error_type = errorMessages[message.error_type as keyof ErrorMessages];
-    rowToUpdate.date_technicians_response = new Date();
+    rowToUpdate.date_technicians_response = new Date().toLocaleString('ru-RU');
     await rowToUpdate.save();
   }
 
