@@ -8,7 +8,7 @@ const pool = new Pool({
   database: process.env.DB_DATABASE,
   password: process.env.DB_PASSWORD,
   user: process.env.DB_USER,
-  port: +process.env.DB_PORT! || 5432,
+  port: +process.env.DB_PORT! || 25432,
 });
 
 export interface Apparats {
@@ -41,6 +41,8 @@ export async function queryDatabase(): Promise<Apparats[]> {
       GROUP BY 1, 2, 3 Order by last_trans_date limit 10;
     `);
     return res.rows;
+  } catch (e) {
+    throw new Error('hz');
   } finally {
     client.release();
   }

@@ -47,6 +47,7 @@ async function sendNotification(apparat: Apparats, technic: TechnicsList) {
 async function getData() {
   try {
     const [apparats, technic] = await Promise.all([queryDatabase(), googleSheet.read()]);
+    console.log(apparats.length);
 
     for await (const apparat of apparats) {
       await sendNotification(apparat, technic);
@@ -55,7 +56,6 @@ async function getData() {
     console.error(error);
   }
 }
-
 cron.schedule('* * * * *', getData);
 
 function getApparatInfoFromMessage(message: CallbackQuery.AbstractQuery['message']) {
@@ -93,16 +93,18 @@ async function handleApparatAction(
 
     if (apparatInfo) {
       const { id } = apparatInfo;
-
-      await googleSheet.update({
-        date_technicians_response: new Date().toLocaleString('ru-RU'),
-        error_type: callbackData,
-        id: id!,
-        id_technicians: ctx.from?.id!,
-        name_technicians: ctx.from?.first_name!,
-      });
-      const res = await ctx.deleteMessage();
-      return res;
+      try {
+        const res = await googleSheet.update({
+          date_technicians_response: new Date().toLocaleString('ru-RU'),
+          error_type: callbackData,
+          id: id!,
+          id_technicians: ctx.from?.id!,
+          name_technicians: ctx.from?.first_name!,
+        });
+        return res;
+      } catch (e) {
+        return e;
+      }
     }
   }
 }
