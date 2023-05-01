@@ -31,71 +31,87 @@ export class GoogleSheets {
   private _documentIdToRead: string;
   private _client_email: string;
   private _private_key: string;
+  private _requiredFieldsForWrites = [
+    'id',
+    'apparat_id',
+    'apparat_name',
+    'id_technicians',
+    'name_technicians',
+    'last_trans_date',
+    'date_send_message',
+    'timedelta',
+    'date_technicians_response',
+    'error_type',
+    'comment',
+  ];
+  private _requiredFieldsForRead = ['id_technika', 'tg_id', 'name', 'region'];
 
   constructor(client_email: string, private_key: string, documentIdToWrite: string, documentIdToRead: string) {
     this._client_email = client_email;
     this._private_key = private_key;
-    this._documentIdToWrite = documentIdToWrite;
     this._documentIdToRead = documentIdToRead;
+    this._documentIdToWrite = documentIdToWrite;
+    (async () => {
+      await this.setNewDocumentIdToWrite(documentIdToWrite);
+      await this.setNewDocumentIdToRead(documentIdToRead);
+    })();
   }
 
-  get client_email(): string {
+  public get required_fields() {
+    return this._requiredFieldsForWrites;
+  }
+
+  public get documentIdToWrite(): string {
+    return this._documentIdToWrite;
+  }
+
+  public get documentIdToRead(): string {
+    return this._documentIdToRead;
+  }
+
+  public get client_email(): string {
     return this._client_email;
   }
 
-  get private_key(): string {
+  public get private_key(): string {
     return this._private_key;
   }
-  async setNewDocumentIdToWrite(documentIdToWrite: string) {
-    const required_fields = [
-      'id_apparat',
-      'name_apparat',
-      'id_technicians',
-      'name_technicians',
-      'last_transaction_date',
-      'date_send_message',
-      'timedelta',
-      'date_technicians_response',
-      'error_type',
-      'comment',
-    ];
-    const doc = new GoogleSpreadsheet(documentIdToWrite);
+
+  private async authenticate(documentId: string) {
+    const doc = new GoogleSpreadsheet(documentId);
     await doc.useServiceAccountAuth({
       client_email: this._client_email,
       private_key: this._private_key,
     });
-
     await doc.loadInfo();
-    const sheet = doc.sheetsByIndex[0];
-    const rows = await sheet.getRows();
-    if (rows[0]._rawData.toString() === required_fields.toString()) {
-      this._documentIdToWrite = documentIdToWrite;
-      return true;
-    } else {
-      return false;
-    }
+    return doc.sheetsByIndex[0];
   }
 
-  // private async getSheet(documentId: string) {
-  //   const doc = new GoogleSpreadsheet(documentId);
-  //   await doc.useServiceAccountAuth({
-  //     client_email: this.client_email,
-  //     private_key: this.private_key,
-  //   });
-  //   await doc.loadInfo();
-  //   return doc.sheetsByIndex[0];
-  // }
+  private async fieldChecker(documentId: string, mode: string) {
+    const sheet = await this.authenticate(documentId);
+    const rows = await sheet.getRows();
+
+    const requiredFields = mode === 'read' ? this._requiredFieldsForRead : this._requiredFieldsForWrites;
+    if (sheet.headerValues.toString() !== requiredFields.toString()) {
+      throw new Error(
+        `Invalid sheet format! Google Spreadsheet should have the following fields: ${requiredFields.toLocaleString()}`,
+      );
+    }
+    return true;
+  }
+
+  public async setNewDocumentIdToWrite(documentIdToWrite: string) {
+    await this.fieldChecker(documentIdToWrite, 'write');
+  }
+
+  public async setNewDocumentIdToRead(documentIdToWrite: string) {
+    await this.fieldChecker(documentIdToWrite, 'read');
+  }
 
   public async write(message: NewMessage) {
-    const doc = new GoogleSpreadsheet(this._documentIdToWrite);
-    await doc.useServiceAccountAuth({
-      client_email: this._client_email,
-      private_key: this._private_key,
-    });
-    await doc.loadInfo();
-    const sheet = doc.sheetsByIndex[0];
+    const sheet = await this.authenticate(this._documentIdToWrite);
 
-    const row = await sheet.addRow({
+    await sheet.addRow({
       id: message.id,
       apparat_id: message.apparat_id,
       apparat_name: message.apparat_name || 'Пусто',
@@ -106,32 +122,23 @@ export class GoogleSheets {
   }
 
   public async update(message: UpdateMessage) {
-    const doc = new GoogleSpreadsheet(this._documentIdToWrite);
-    await doc.useServiceAccountAuth({
-      client_email: this._client_email,
-      private_key: this._private_key,
-    });
-    await doc.loadInfo();
-    const sheet = doc.sheetsByIndex[0];
+    const sheet = await this.authenticate(this._documentIdToWrite);
     const rows = await sheet.getRows();
-    const rowToUpdate = rows.find((row) => row.id === message.id)!;
-    rowToUpdate.id_technicians = message.id_technicians;
-    rowToUpdate.name_technicians = message.name_technicians;
-    rowToUpdate.error_type = errorMessages[message.error_type as keyof ErrorMessages];
-    rowToUpdate.date_technicians_response = new Date().toLocaleString('ru-RU');
-    await rowToUpdate.save();
+    try {
+      const rowToUpdate = rows.find((row) => row.id === message.id)!;
+      rowToUpdate.id_technicians = message.id_technicians;
+      rowToUpdate.name_technicians = message.name_technicians;
+      rowToUpdate.error_type = errorMessages[message.error_type as keyof ErrorMessages];
+      rowToUpdate.date_technicians_response = new Date().toLocaleString('ru-RU');
+      await rowToUpdate.save();
+    } catch (e) {
+      return new Error('Произошла ошибка на стороне Гугл');
+    }
   }
 
   public async read(): Promise<TechnicsList> {
-    const doc = new GoogleSpreadsheet(this._documentIdToRead);
-    await doc.useServiceAccountAuth({
-      client_email: this._client_email,
-      private_key: this._private_key,
-    });
-    await doc.loadInfo();
-    const sheet = doc.sheetsByIndex[0];
+    const sheet = await this.authenticate(this._documentIdToRead);
     const rows = await sheet.getRows();
-
     return rows.reduce((obj: any, { id_technika, tg_id }) => {
       obj[id_technika] = tg_id;
       return obj;
